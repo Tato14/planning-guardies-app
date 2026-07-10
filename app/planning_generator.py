@@ -48,6 +48,7 @@ class Config:
     fix_and_rota: list = field(default_factory=list)   # both
     sun_nit_only: list = field(default_factory=list)
     weekend_day_only: list = field(default_factory=list)
+    nou_incorporats: list = field(default_factory=list)  # cobreixen dimecres tarda (excepte 1r Dc del mes)
 
 
 @dataclass
@@ -194,6 +195,10 @@ def load_input(path: str) -> tuple[dict, Config, Meta]:
             if name not in config.weekend_day_only:
                 config.weekend_day_only.append(name)
             config.rotators.append(name)
+        elif rol == 'nou-incorporat' or rol == 'nou incorporat':
+            # New professionals: only cover Wed afternoons (except 1st Wed of month)
+            # NOT part of general rotation until they graduate to 'rotador'.
+            config.nou_incorporats.append(name)
 
     # ----- Read Vacances sheet -----
     if 'Vacances' not in wb.sheetnames:
@@ -302,6 +307,8 @@ def generate_planning(constraints: dict, config: Config, meta: Meta) -> tuple[di
     slots = _gen_slots(meta)
     assignments = {}
     queue = deque(pool)
+    # Separate rotation queue for nou-incorporats (Wed 16-20 slots only)
+    nou_queue = deque(sorted(set(config.nou_incorporats), key=fold))
     assigned_today = defaultdict(set)
     deferred_lush = 0
     deferred_arce = 0
@@ -327,6 +334,7 @@ def generate_planning(constraints: dict, config: Config, meta: Meta) -> tuple[di
 
     def is_sun_nit(s): return s[1] == 6 and 'nit' in s[2]
     def is_weekend_dia(s): return s[1] in (5, 6) and 'dia' in s[2]
+    def is_wed_afternoon(s): return s[1] == 2 and s[2] == '16-20'
 
     def is_lush(n): return n in config.sun_nit_only
     def is_arce(n): return n in config.weekend_day_only
@@ -355,6 +363,30 @@ def generate_planning(constraints: dict, config: Config, meta: Meta) -> tuple[di
                     break
             if slot in assignments:
                 continue
+
+        # Wed afternoon (16-20, excluding 1st Wed which is a fix): try nou-incorporats first
+        if is_wed_afternoon(slot) and nou_queue:
+            chosen_nou = None
+            tries_nou = 0
+            n_nou = len(nou_queue)
+            temp_skip_nou = []
+            while nou_queue and tries_nou < n_nou:
+                cand_nou = nou_queue.popleft()
+                if _can_work(cand_nou, day, constraints) and cand_nou not in assigned_today[day]:
+                    chosen_nou = cand_nou
+                    break
+                else:
+                    temp_skip_nou.append(cand_nou)
+                tries_nou += 1
+            # Restore skipped nou-incorporats at the front (they didn't lose their turn)
+            for n_ in reversed(temp_skip_nou):
+                nou_queue.appendleft(n_)
+            if chosen_nou:
+                assignments[slot] = chosen_nou
+                assigned_today[day].add(chosen_nou)
+                nou_queue.append(chosen_nou)  # move to back of nou queue
+                continue
+            # If no nou-incorporat available, fall through to normal rotation
 
         # Normal rotation
         chosen = None
@@ -558,9 +590,17 @@ def validate_planning(assignments: dict, config: Config, constraints: dict, meta
     for slot, name in assignments.items():
         if name in config.weekend_day_only and not (slot[1] in (5, 6) and 'dia' in slot[2]):
             errors.append(f"Dia {slot[0]} {slot[2]}: {name} (Weekend-day-only) fora del seu torn")
+    # Nou-incorporats han d'aparèixer només a dimecres 16-20 (excepte 1r Dc del mes)
+    for slot, name in assignments.items():
+        if name in config.nou_incorporats:
+            if not (slot[1] == 2 and slot[2] == '16-20'):
+                errors.append(f"Dia {slot[0]} {slot[2]}: {name} (Nou-incorporat) fora del seu torn Dc 16-20")
+            elif slot[0] == meta.first_wed_day:
+                errors.append(f"Dia {slot[0]} {slot[2]}: {name} (Nou-incorporat) NO pot cobrir el 1r dimecres del mes")
     # Equity (excluding fix and special)
     counts = defaultdict(int)
-    exclude = set(config.fix_only) | set(config.sun_nit_only) | set(config.weekend_day_only) | set(config.fix_and_rota)
+    exclude = (set(config.fix_only) | set(config.sun_nit_only) | set(config.weekend_day_only) |
+               set(config.fix_and_rota) | set(config.nou_incorporats))
     for n in assignments.values():
         if n not in exclude:
             counts[n] += 1
@@ -587,6 +627,7 @@ if __name__ == '__main__':
     print(f"Rotadors: {len(config.rotators)}, Fixos només: {len(config.fix_only)}")
     print(f"Sun-nit-only: {config.sun_nit_only}")
     print(f"Weekend-day-only: {config.weekend_day_only}")
+    print(f"Nou-incorporats (dimecres 16-20): {config.nou_incorporats}")
 
     assignments, queue, warn = generate_planning(cons, config, meta)
     write_planning(assignments, config, meta, cons, args.template, args.output)

@@ -88,6 +88,7 @@ if constraints and meta and config:
         st.write(f"**Weekend-day-only**: {', '.join(config.weekend_day_only) if config.weekend_day_only else 'cap'}")
         st.write(f"**Fix-i-rota**: {', '.join(config.fix_and_rota) if config.fix_and_rota else 'cap'}")
         st.write(f"**Fix-només**: {', '.join(config.fix_only) if config.fix_only else 'cap'}")
+        st.write(f"**Nou-incorporat** (cobreix dimecres 16-20): {', '.join(config.nou_incorporats) if config.nou_incorporats else 'cap'}")
 
 # Step 3: Upload template
 if constraints and meta and config:
