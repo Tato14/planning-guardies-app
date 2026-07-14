@@ -158,4 +158,3 @@ if constraints and meta and config:
 
 st.divider()
 st.caption("Algorisme v2.0 — config-driven, sense dades identificatives al codi.")
-                           
