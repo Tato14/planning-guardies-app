@@ -80,7 +80,7 @@ if constraints and meta and config:
             fix_rows.append({"Dia": DOW_NAMES[dow], "Franja": shift, "Rol": role, "Radiòleg": name})
         if config.first_wed_radiologist:
             fix_rows.append({"Dia": "1r Dimecres mes", "Franja": "16-20", "Rol": "N i B", "Radiòleg": config.first_wed_radiologist})
-        if fix_rows: st.dataframe(fix_rows, hide_index=True, use_container_width=True)
+        if fix_rows: st.dataframe(fix_rows, hide_index=True, width='stretch')
         else: st.info("Cap torn fix definit.")
         
         st.subheader("Casos especials")
@@ -99,7 +99,7 @@ if constraints and meta and config:
         st.success("Plantilla carregada.")
         
         st.header("Pas 4 — Generar planning")
-        if st.button("🚀 Generar planning", type="primary", use_container_width=True):
+        if st.button("🚀 Generar planning", type="primary", width='stretch'):
             with st.spinner("Calculant..."):
                 try:
                     assignments, queue_final, warnings = generate_planning(constraints, config, meta)
@@ -140,7 +140,7 @@ if constraints and meta and config:
                             data=f.read(),
                             file_name=f"Planning_{meta.year}_{meta.month:02d}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            use_container_width=True,
+                            width='stretch',
                         )
                     
                     with st.expander("📅 Veure totes les assignacions"):
@@ -158,3 +158,4 @@ if constraints and meta and config:
 
 st.divider()
 st.caption("Algorisme v2.0 — config-driven, sense dades identificatives al codi.")
+                           
