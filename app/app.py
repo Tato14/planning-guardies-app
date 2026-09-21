@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 import streamlit as st
 from planning_generator import (
     load_input, generate_planning, write_planning,
-    validate_planning, last_in_rotation
+    validate_planning, last_in_rotation, DIES_REINCORPORACIO
 )
 
 st.set_page_config(page_title="Generador de planning de guàrdies", page_icon="🩺", layout="wide")
@@ -41,7 +41,13 @@ if in_file:
             f.write(in_file.getvalue())
             in_path = f.name
         constraints, config, meta = load_input(in_path)
-        st.success(f"Fitxer carregat. {len(constraints)} radiòlegs amb constriccions, {len(config.rotators)} a la roda.")
+        st.success(f"Fitxer carregat. {len(constraints)} radiòlegs a la plantilla, {len(config.rotators)} a la roda.")
+        if config.inactius:
+            st.warning(
+                f"**{len(config.inactius)} professional(s) marcats com a NO actius** aquest mes "
+                f"(columna E de la pestanya Radiòlegs): {', '.join(sorted(config.inactius))}. "
+                "Queden fora de la roda sense haver-los d'esborrar de la plantilla."
+            )
     except Exception as e:
         st.error(f"Error llegint el fitxer: {e}")
         import traceback
@@ -89,6 +95,18 @@ if constraints and meta and config:
         st.write(f"**Fix-i-rota**: {', '.join(config.fix_and_rota) if config.fix_and_rota else 'cap'}")
         st.write(f"**Fix-només**: {', '.join(config.fix_only) if config.fix_only else 'cap'}")
         st.write(f"**Nou-incorporat** (cobreix dimecres 16-20): {', '.join(config.nou_incorporats) if config.nou_incorporats else 'cap'}")
+        st.write(f"**NO actius aquest mes** (col. E = No): {', '.join(sorted(config.inactius)) if config.inactius else 'cap'}")
+
+        st.subheader("Codis de la pestanya Vacances")
+        st.markdown(f"""
+| Codi | Significat | Efecte |
+|---|---|---|
+| `V` | Vacances | Bloqueja el dia + {DIES_REINCORPORACIO - 1} dies de marge de reincorporació |
+| `B` | Baixa | Bloqueja el dia + {DIES_REINCORPORACIO - 1} dies de marge de reincorporació |
+| `C` | Congrés | Bloqueja només el dia |
+| `G` | Guàrdia externa | Bloqueja el dia, l'anterior i el posterior |
+| `X` | Guàrdia ja assignada | Informatiu, no afecta l'algorisme |
+""")
 
 # Step 3: Upload template
 if constraints and meta and config:

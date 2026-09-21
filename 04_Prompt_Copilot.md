@@ -15,20 +15,26 @@ Has de generar el planning mensual de guàrdies seguint les regles documentades.
 Has d'omplir la plantilla del planning seguint el procés:
 
 ### Pas 1 — Llegir el context
-Llegeix el document de regles per entendre l'algorisme. Identifica els codis V/C/G/X i els rols (rotador, fix-només, fix-i-rota, sun-nit-only, weekend-day-only).
+Llegeix el document de regles per entendre l'algorisme. Identifica els codis V/B/C/G/X i els rols (rotador, fix-només, fix-i-rota, sun-nit-only, weekend-day-only, nou-incorporat).
 
 ### Pas 2 — Llegir les dades
 Obre el fitxer d'entrada:
 - Pestanya "Vacances", capçal: mes/any (B1), primer radiòleg (D1), festius (F1).
 - Pestanya "Configuració": qui cobreix cada torn fix i quins són els perfils especials.
-- Pestanya "Radiòlegs": llista mestra amb rol de cadascú.
-- Pestanya "Vacances", files 4 en endavant: V/C/G/X per dia/professional.
+- Pestanya "Radiòlegs": llista mestra amb rol (col. B) i **Actiu aquest mes (col. E)** de cadascú.
+- Pestanya "Vacances", files 4 en endavant: V/B/C/G/X per dia/professional.
+
+### Pas 2 bis — Filtrar els NO actius
+Tot professional amb `No` a la columna E de la pestanya Radiòlegs **no fa cap guàrdia aquest mes**: exclou-lo de la roda, dels nou-incorporats i dels perfils especials. Si té un torn fix a Configuració, escriu-hi `[SUBSTITUIR — Nom: NO actiu aquest mes]`. Una cel·la buida equival a `Sí`.
+
+### Pas 2 ter — Calcular el marge de reincorporació
+Per a cada professional, si una absència `V` o `B` acaba el dia D (és a dir, D té V o B i D+1 no), **bloqueja també els dies D+1 i D+2**. Torna a estar disponible el dia D+3. `C` i `G` no generen marge.
 
 ### Pas 3 — Pre-omplir els fixos
 Per a cada dia laborable no festiu, copia el radiòleg fix indicat a Configuració al torn corresponent del planning.
 
 ### Pas 4 — Generar la roda
-- Crea la llista de rotadors (rotador + fix-i-rota + sun-nit-only + weekend-day-only).
+- Crea la llista de rotadors (rotador + fix-i-rota + sun-nit-only + weekend-day-only), **excloent-ne els NO actius**.
 - Ordena alfabèticament ignorant accents.
 - Rota la cua perquè comenci pel primer radiòleg indicat a D1.
 
@@ -40,7 +46,8 @@ Per a cada torn no fix, en ordre cronològic:
 
 ### Pas 6 — Validar
 - Cap doble assignació per dia.
-- Cap V/C/G violat.
+- Cap V/B/C/G violat, ni cap dia de marge de reincorporació.
+- Cap professional amb Actiu = "No" al planning.
 - Sun-nit-only només a Dg nit.
 - Weekend-day-only només a Ds/Dg dia.
 - Distribució equitativa entre rotadors purs.

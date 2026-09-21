@@ -9,3 +9,15 @@ venv/
 Thumbs.db
 ~$*.xlsx
 *.tmp
+
+# --- Dades personals: MAI al repo ---
+# Plantilles i plannings amb noms i correus reals de professionals.
+# Viuen només al OneDrive de l'IDI i es pugen a l'app a mà cada mes.
+Plantilla_TD_IDI_REAL*.xlsx
+*Planning TD IDI*.xlsx
+*Correus*.xlsx
+05_Benchmark_Novembre*.xlsx
+05_Benchmark_20*.xlsx
+Entrada_*_20*.xlsx
+# Artefactes de build
+Planning guardies - paquet.zip

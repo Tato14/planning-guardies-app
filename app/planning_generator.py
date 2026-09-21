@@ -6,8 +6,8 @@ Sense noms hard-coded al codi. Tota la informació identificativa
 
 Estructura esperada del fitxer d'entrada (xlsx):
   - Pestanya "Configuració": rols fixos + perfils especials
-  - Pestanya "Radiòlegs": llista mestra amb rol per professional
-  - Pestanya "Vacances": V/C/G/X per dia/professional + metadades
+  - Pestanya "Radiòlegs": llista mestra amb rol (col. B) i Actiu Sí/No (col. E)
+  - Pestanya "Vacances": V/B/C/G/X per dia/professional + metadades
 
 Vegeu 02_Plantilla_Entrada.xlsx per a un exemple buit.
 """
@@ -35,6 +35,57 @@ DOW_MAP = {
     'viernes': 4, 'sábado': 5, 'domingo': 6,
 }
 
+# ------------------------------------------------------------
+# Codis de la pestanya "Vacances"
+# ------------------------------------------------------------
+# Codis que l'usuari pot escriure a les cel·les:
+CODIS_FULL = ('V', 'B', 'C', 'G', 'X')
+#   V = Vacances       -> bloqueja el dia
+#   B = Baixa          -> bloqueja el dia (mateix comportament que V)
+#   C = Congrés        -> bloqueja el dia
+#   G = Guàrdia externa-> bloqueja el dia, l'anterior i el posterior
+#   X = Informatiu (guàrdia ja assignada); no afecta l'algorisme
+
+# Codis derivats, calculats pel generador (mai escrits al full per l'usuari):
+CODI_INACTIU = 'I'          # Radiòlegs!E = "No" -> no fa guàrdies aquest mes
+CODI_REINCORPORACIO = 'R'   # dies de marge després d'una absència V/B
+
+# Absències llargues que generen marge de reincorporació.
+CODIS_AMB_REINCORPORACIO = ('V', 'B')
+
+# Decalatge de reincorporació, en dies.
+#   1 = comportament antic (disponible l'endemà de tornar)
+#   3 = disponible al cap de 3 dies; per tant es bloquegen els 2 dies previs
+DIES_REINCORPORACIO = 3
+
+# Tots els codis que impedeixen assignar una guàrdia aquell dia.
+CODIS_BLOQUEJANTS = ('V', 'B', 'C', 'G', CODI_INACTIU, CODI_REINCORPORACIO)
+
+MOTIU_TEXT = {
+    'V': 'vacances',
+    'B': 'baixa',
+    'C': 'congrés',
+    'G': 'guàrdia externa',
+    CODI_INACTIU: 'NO actiu aquest mes (Radiòlegs col. E = No)',
+    CODI_REINCORPORACIO: f'marge de reincorporació ({DIES_REINCORPORACIO} dies)',
+}
+
+
+def _es_actiu(val) -> bool:
+    """Interpreta la columna E (Actiu) de la pestanya Radiòlegs.
+
+    Buit = actiu (retrocompatibilitat amb plantilles antigues sense la columna).
+    Només 'No' / 'N' / 'FALSE' / '0' desactiven el professional.
+    """
+    if val is None:
+        return True
+    if isinstance(val, bool):
+        return val
+    s = fold(str(val)).strip()
+    if s == '':
+        return True
+    return s not in ('no', 'n', 'fals', 'false', '0', 'nao', 'non')
+
 
 @dataclass
 class Config:
@@ -49,6 +100,7 @@ class Config:
     sun_nit_only: list = field(default_factory=list)
     weekend_day_only: list = field(default_factory=list)
     nou_incorporats: list = field(default_factory=list)  # cobreixen dimecres tarda (excepte 1r Dc del mes)
+    inactius: list = field(default_factory=list)       # Radiòlegs!E = "No": fora del planning aquest mes
 
 
 @dataclass
@@ -132,10 +184,12 @@ def load_input(path: str) -> tuple[dict, Config, Meta]:
     if 'Radiòlegs' not in wb.sheetnames:
         raise ValueError("Falta la pestanya 'Radiòlegs' al fitxer d'entrada.")
     ws_r = wb['Radiòlegs']
-    radiologists = {}  # name -> rol
+    radiologists = {}   # name -> rol (tothom, actius i no actius)
+    inactius = []       # noms amb Actiu = "No" aquest mes
     for row in range(4, ws_r.max_row + 1):
         name = ws_r.cell(row=row, column=1).value
         rol = ws_r.cell(row=row, column=2).value
+        actiu = ws_r.cell(row=row, column=5).value   # columna E
         if not name or not isinstance(name, str):
             continue
         name = name.strip()
@@ -146,6 +200,8 @@ def load_input(path: str) -> tuple[dict, Config, Meta]:
         else:
             rol = 'rotador'  # default
         radiologists[name] = rol
+        if not _es_actiu(actiu):
+            inactius.append(name)
 
     # ----- Read Configuració sheet -----
     if 'Configuració' not in wb.sheetnames:
@@ -178,8 +234,19 @@ def load_input(path: str) -> tuple[dict, Config, Meta]:
         elif a == 'weekend-day-only' and name:
             config.weekend_day_only.append(name)
 
+    # Els professionals marcats com a NO actius queden fora de tots els grups:
+    # ni roda, ni nou-incorporats, ni perfils especials. No cal esborrar-los
+    # de la plantilla: n'hi ha prou amb posar "No" a la columna E.
+    config.inactius = list(inactius)
+    inactius_set = set(inactius)
+    # També cal treure'ls dels perfils especials llegits de la pestanya Configuració
+    config.sun_nit_only = [n for n in config.sun_nit_only if n not in inactius_set]
+    config.weekend_day_only = [n for n in config.weekend_day_only if n not in inactius_set]
+
     # Categorize radiologists by rol
     for name, rol in radiologists.items():
+        if name in inactius_set:
+            continue
         if rol == 'rotador':
             config.rotators.append(name)
         elif rol == 'fix-només' or rol == 'fix-nomes':
@@ -230,11 +297,51 @@ def load_input(path: str) -> tuple[dict, Config, Meta]:
             val = ws_v.cell(row=row, column=1 + day).value
             if val and isinstance(val, str):
                 v = val.strip().upper()
-                if v in ('V', 'C', 'G', 'X'):
+                if v in CODIS_FULL:
                     cons[day] = v
         constraints[name] = cons
 
+    # Assegura que tothom té entrada, també els que no surten a la pestanya Vacances
+    for name in radiologists:
+        constraints.setdefault(name, {})
+
+    _apply_derived_codes(constraints, inactius_set, meta.days_in_month)
+
     return constraints, config, meta
+
+
+def _apply_derived_codes(constraints: dict, inactius: set, days_in_month: int) -> None:
+    """Afegeix els codis derivats (I i R) al diccionari de constriccions, in place.
+
+    - I : tot el mes bloquejat per als professionals amb Actiu = "No".
+    - R : marge de reincorporació després del darrer dia d'una absència V/B.
+          Amb DIES_REINCORPORACIO = 3, si l'absència acaba el dia D el
+          professional torna a estar disponible el dia D+3, i per tant es
+          bloquegen D+1 i D+2.
+    """
+    for name in inactius:
+        cons = constraints.setdefault(name, {})
+        for day in range(1, days_in_month + 1):
+            cons[day] = CODI_INACTIU
+
+    extra_blocked = max(0, DIES_REINCORPORACIO - 1)
+    if extra_blocked == 0:
+        return
+
+    for name, cons in constraints.items():
+        if name in inactius:
+            continue
+        # Dies en què s'acaba un bloc d'absència llarga (V/B)
+        fins = [d for d in range(1, days_in_month + 1)
+                if cons.get(d) in CODIS_AMB_REINCORPORACIO
+                and cons.get(d + 1) not in CODIS_AMB_REINCORPORACIO]
+        for d in fins:
+            for offset in range(1, extra_blocked + 1):
+                nd = d + offset
+                if nd > days_in_month:
+                    break
+                if nd not in cons:          # no trepitgem V/B/C/G/X ja existents
+                    cons[nd] = CODI_REINCORPORACIO
 
 
 # ============================================================
@@ -243,13 +350,24 @@ def load_input(path: str) -> tuple[dict, Config, Meta]:
 
 def _can_work(name: str, day: int, constraints: dict) -> bool:
     cons = constraints.get(name, {})
-    if cons.get(day) in ('V', 'C', 'G'):
+    if cons.get(day) in CODIS_BLOQUEJANTS:
         return False
     if day - 1 >= 1 and cons.get(day - 1) == 'G':
         return False
     if cons.get(day + 1) == 'G':
         return False
     return True
+
+
+def _motiu_bloqueig(name: str, day: int, constraints: dict) -> str:
+    """Text llegible del motiu pel qual algú no pot fer guàrdia un dia."""
+    cons = constraints.get(name, {})
+    code = cons.get(day)
+    if code in CODIS_BLOQUEJANTS:
+        return MOTIU_TEXT.get(code, code)
+    if (day - 1 >= 1 and cons.get(day - 1) == 'G') or cons.get(day + 1) == 'G':
+        return 'guàrdia externa adjacent'
+    return 'no disponible'
 
 
 def _build_pool(config: Config, start_name: str) -> list:
@@ -469,9 +587,8 @@ def write_planning(assignments: dict, config: Config, meta: Meta, constraints: d
                 # Apply substitution if person can't work
                 if not _can_work(name, day, constraints):
                     # Find substitute among fix_and_rota or first available rotator
-                    cons = constraints.get(name, {})
-                    reason = cons.get(day) or 'G adjacent'
-                    name = f"[SUBSTITUIR — {name} té {reason}]"
+                    reason = _motiu_bloqueig(name, day, constraints)
+                    name = f"[SUBSTITUIR — {name}: {reason}]"
                 result.append((role, name))
         return result if result else None
 
@@ -583,7 +700,13 @@ def validate_planning(assignments: dict, config: Config, constraints: dict, meta
             errors.append(f"Dia {day}: doble assignació")
     for slot, name in assignments.items():
         if not _can_work(name, slot[0], constraints):
-            errors.append(f"Dia {slot[0]} {slot[2]} {slot[3]}: {name} en conflicte")
+            motiu = _motiu_bloqueig(name, slot[0], constraints)
+            errors.append(f"Dia {slot[0]} {slot[2]} {slot[3]}: {name} en conflicte ({motiu})")
+    # Cap professional marcat com a NO actiu pot aparèixer a la roda
+    inactius = set(config.inactius)
+    for slot, name in assignments.items():
+        if name in inactius:
+            errors.append(f"Dia {slot[0]} {slot[2]}: {name} està marcat com a NO actiu aquest mes")
     for slot, name in assignments.items():
         if name in config.sun_nit_only and not (slot[1] == 6 and 'nit' in slot[2]):
             errors.append(f"Dia {slot[0]} {slot[2]}: {name} (Sun-nit-only) fora del seu torn")
@@ -628,6 +751,8 @@ if __name__ == '__main__':
     print(f"Sun-nit-only: {config.sun_nit_only}")
     print(f"Weekend-day-only: {config.weekend_day_only}")
     print(f"Nou-incorporats (dimecres 16-20): {config.nou_incorporats}")
+    if config.inactius:
+        print(f"NO actius aquest mes ({len(config.inactius)}): {', '.join(config.inactius)}")
 
     assignments, queue, warn = generate_planning(cons, config, meta)
     write_planning(assignments, config, meta, cons, args.template, args.output)
