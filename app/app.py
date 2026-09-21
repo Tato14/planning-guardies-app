@@ -2,10 +2,16 @@
 import datetime, tempfile
 from collections import Counter, defaultdict
 import streamlit as st
+import planning_generator as pg
 from planning_generator import (
     load_input, generate_planning, write_planning,
-    validate_planning, last_in_rotation, DIES_REINCORPORACIO
+    validate_planning, last_in_rotation
 )
+
+# Es llegeix del mòdul, no s'importa pel nom: si Streamlit Cloud servís una
+# versió antiga del mòdul en memòria, l'app segueix arrencant en comptes de
+# petar amb un ImportError.
+DIES_REINCORPORACIO = getattr(pg, 'DIES_REINCORPORACIO', 3)
 
 st.set_page_config(page_title="Generador de planning de guàrdies", page_icon="🩺", layout="wide")
 
