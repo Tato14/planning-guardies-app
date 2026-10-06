@@ -15,7 +15,7 @@ if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
 # Descarrega les versions en memòria dels mòduls propis (no de les llibreries).
-for _m in ('planning_generator', 'validator', 'rotation_tracker'):
+for _m in ('planning_generator', 'period_templates', 'validator', 'rotation_tracker'):
     sys.modules.pop(_m, None)
 
 exec(open(APP_DIR / 'app.py', encoding='utf-8').read())

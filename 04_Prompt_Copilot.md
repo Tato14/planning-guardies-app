@@ -19,19 +19,23 @@ Llegeix el document de regles per entendre l'algorisme. Identifica els codis V/B
 
 ### Pas 2 — Llegir les dades
 Obre el fitxer d'entrada:
-- Pestanya "Vacances", capçal: mes/any (B1), primer radiòleg (D1), festius (F1).
+- Pestanya "Vacances", capçalera: mes del planning (B1), primer radiòleg de la roda (R1), període planificat del dia B2 al dia R2.
+- **El període és de setmanes completes (dilluns → diumenge).** Una setmana pertany al mes del seu dilluns. Planifica TOTS els dies entre B2 i R2, encara que alguns siguin del mes següent.
+- Fila 4: una data per columna. Les primeres columnes en gris (anteriors a B2) són del període anterior: NO es planifiquen, només serveixen per al marge de reincorporació.
+- Fila 5 ("Festiu"): una F marca el dia com a festiu.
 - Pestanya "Configuració": qui cobreix cada torn fix i quins són els perfils especials.
 - Pestanya "Radiòlegs": llista mestra amb rol (col. B) i **Actiu aquest mes (col. E)** de cadascú.
-- Pestanya "Vacances", files 4 en endavant: V/B/C/G/X per dia/professional.
+- Pestanya "Vacances", files 6 en endavant: V/B/C/G/X per dia i professional.
+- El fix del "1r dimecres del mes" és el primer dimecres del **mes natural** (dies 1-7), encara que caigui dins del planning d'un altre mes.
 
 ### Pas 2 bis — Filtrar els NO actius
 Tot professional amb `No` a la columna E de la pestanya Radiòlegs **no fa cap guàrdia aquest mes**: exclou-lo de la roda, dels nou-incorporats i dels perfils especials. Si té un torn fix a Configuració, escriu-hi `[SUBSTITUIR — Nom: NO actiu aquest mes]`. Una cel·la buida equival a `Sí`.
 
 ### Pas 2 ter — Calcular el marge de reincorporació
-Per a cada professional, si una absència `V` o `B` acaba el dia D (és a dir, D té V o B i D+1 no), **bloqueja també els dies D+1 i D+2**. Torna a estar disponible el dia D+3. `C` i `G` no generen marge.
+Per a cada professional, si una absència `V` o `B` acaba el dia D (és a dir, D té V o B i D+1 no), **bloqueja també els dies D+1 i D+2**. Torna a estar disponible el dia D+3. `C` i `G` no generen marge. Això també val quan l'absència acaba en una columna gris del període anterior.
 
 ### Pas 3 — Pre-omplir els fixos
-Per a cada dia laborable no festiu, copia el radiòleg fix indicat a Configuració al torn corresponent del planning.
+La plantilla del planning ha de tenir una pestanya per setmana del període (de dilluns a diumenge), amb les dates a la fila 3. Si en sobren, esborra-les; si en falten, duplica'n una. Per a cada dia laborable no festiu, copia el radiòleg fix indicat a Configuració al torn corresponent del planning.
 
 ### Pas 4 — Generar la roda
 - Crea la llista de rotadors (rotador + fix-i-rota + sun-nit-only + weekend-day-only), **excloent-ne els NO actius**.

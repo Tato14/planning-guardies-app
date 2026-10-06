@@ -8,7 +8,7 @@ comprova contra les regles definides a la Configuració del fitxer d'entrada.
 import sys, datetime, re
 from collections import defaultdict
 import openpyxl
-from planning_generator import load_input, _can_work, fold, Config
+from planning_generator import load_input, _can_work, _motiu_bloqueig, fold, Config
 
 
 def parse_planning(path):
@@ -23,7 +23,7 @@ def parse_planning(path):
             if not isinstance(cell, (datetime.date, datetime.datetime)):
                 continue
             d = cell.date() if isinstance(cell, datetime.datetime) else cell
-            day, dow = d.day, d.weekday()
+            day, dow = d, d.weekday()          # clau = data (els períodes creuen mesos)
             for label, (start, end) in SHIFT_ROWS.items():
                 cur_group = None
                 for r in range(start, end + 1):
@@ -56,10 +56,23 @@ def parse_planning(path):
 
 def validate(input_path, planning_path):
     constraints, config, meta = load_input(input_path)
-    assignments = parse_planning(planning_path)
+    raw = parse_planning(planning_path)
 
     errors = []
     warnings = []
+
+    # Les claus del planning són dates; es passen a índex del període
+    assignments = {}
+    fora = set()
+    for (d, dow, label, grp), name in raw.items():
+        idx = meta.index_of(d)
+        if idx is None:
+            fora.add(d)
+            continue
+        assignments[(idx, dow, label, grp)] = name
+    if fora:
+        warnings.append("Hi ha guàrdies amb dates fora del període del fitxer d'entrada: "
+                        + ', '.join(f"{d:%d/%m}" for d in sorted(fora)))
 
     # Match assignment name to constraint name (loose)
     name_set = set(constraints.keys())
@@ -81,28 +94,28 @@ def validate(input_path, planning_path):
     for day, names in by_day.items():
         dup = [n for n in names if names.count(n) > 1]
         if dup:
-            errors.append(f"Dia {day}: doble assignació de {set(dup)}")
+            errors.append(f"{meta.fmt(day)}: doble assignació de {set(dup)}")
 
-    # 2. V/C/G
+    # 2. V/B/C/G, marge de reincorporació i NO actius
     for slot, name in assignments.items():
         m = find_match(name)
         if m and not _can_work(m, slot[0], constraints):
-            cons = constraints.get(m, {})
-            reason = cons.get(slot[0]) or 'G adjacent'
-            errors.append(f"Dia {slot[0]} {slot[2]} {slot[3]}: {name} té {reason}")
+            reason = _motiu_bloqueig(m, slot[0], constraints)
+            errors.append(f"{meta.fmt(slot[0])} {slot[2]} {slot[3]}: {name} — {reason}")
 
     # 3. Sun-nit-only outside Sun nit
     for slot, name in assignments.items():
         if name in config.sun_nit_only and not (slot[1] == 6 and 'nit' in slot[2]):
-            errors.append(f"Dia {slot[0]} {slot[2]}: {name} (Sun-nit-only) fora del seu torn")
+            errors.append(f"{meta.fmt(slot[0])} {slot[2]}: {name} (Sun-nit-only) fora del seu torn")
 
     # 4. Weekend-day-only outside Sat/Sun dia
     for slot, name in assignments.items():
         if name in config.weekend_day_only and not (slot[1] in (5, 6) and 'dia' in slot[2]):
-            errors.append(f"Dia {slot[0]} {slot[2]}: {name} (Weekend-day-only) fora del seu torn")
+            errors.append(f"{meta.fmt(slot[0])} {slot[2]}: {name} (Weekend-day-only) fora del seu torn")
 
     # 5. Equity (pure rotators only)
-    exclude = set(config.fix_only) | set(config.sun_nit_only) | set(config.weekend_day_only) | set(config.fix_and_rota)
+    exclude = (set(config.fix_only) | set(config.sun_nit_only) | set(config.weekend_day_only) |
+               set(config.fix_and_rota) | set(config.nou_incorporats))
     counts = defaultdict(int)
     for n in assignments.values():
         m = find_match(n)
